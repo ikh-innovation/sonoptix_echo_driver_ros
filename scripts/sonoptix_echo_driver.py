@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 import cv2
+import time
 import rospy
 import requests
 import threading
@@ -63,8 +64,6 @@ class SonoptixEchoDriver:
 
         self.dyn_reconf_server = Server(SonoptixEchoConfig, self.dyn_reconf_callback)
 
-        self.setup_sonar_capture()
-
     def dyn_reconf_callback(self, config, _):
         rospy.loginfo(config)
         with self.mutex:
@@ -73,10 +72,10 @@ class SonoptixEchoDriver:
             self.publish_sonar_image = config.publish_sonar_image
             self.mock_hardware = config.mock_hardware
             self.minimum_obstacle_value = config.minimum_obstacle_value
-            if config.enabled != self.sonar_enabled:
-                self.set_sonar_state(config.enabled)
             if config.sonar_range != self.sonar_range:
                 self.set_sonar_range(config.sonar_range)
+            if config.enabled != self.sonar_enabled:
+                self.set_sonar_state(config.enabled)
         return config
 
     def enable_sonar_callback(self, srv):
@@ -85,8 +84,8 @@ class SonoptixEchoDriver:
         return True, ""
 
     def sonar_read_laserscan_pub(self, _):
-        try:
-            with self.mutex:
+        with self.mutex:
+            try:
                 if not self.sonar_enabled:
                     return
                 sonar_image = None
@@ -110,7 +109,6 @@ class SonoptixEchoDriver:
                             "Error reading from sonar image stream... Skipping publication!"
                         )
                         return
-                    print(sonar_image.shape)
                 laserscan_msg = LaserScan()
                 laserscan_msg.header.frame_id = self.sonar_frame
                 laserscan_msg.header.stamp = rospy.Time.now()
@@ -129,25 +127,28 @@ class SonoptixEchoDriver:
                     image_msg.header.stamp = rospy.Time.now()
                     image_msg.header.frame_id = self.sonar_frame
                     self.image_pub.publish(image_msg)
-        except Exception as e:
-            self.sonar_capture.release()
-            self.sonar_capture = None
-            rospy.logerr(e)
+            except Exception as e:
+                self.sonar_capture.release()
+                self.sonar_capture = None
+                rospy.logerr(e)
 
     def set_sonar_state(self, state):
         self.sonar_enabled = state
         if self.mock_hardware:
             return
-        # BUG: Setting sensor state and range independently does not seem to work
-        # requests.patch(
-        #     self.api_url + "/transponder",
-        #     json={
-        #         "enable": state,
-        #     },
-        # )
+        try:
+            requests.patch(
+                self.api_url + "/transponder",
+                json={
+                    "enable": self.sonar_enabled,
+                    "sonar_range": self.sonar_range,
+                },
+            )
+        except Exception as e:
+            rospy.logerr("Failed while enabling sonar:" + str(e))
 
     def set_sonar_range(self, r):
-        self.set_sonar_state(False)
+        previous_sonar_state = self.sonar_enabled
         self.sonar_range = r
         self.sonar_fov_rad = (
             120 * self.pi_deg_ratio
@@ -156,28 +157,23 @@ class SonoptixEchoDriver:
         )
         if self.mock_hardware:
             return
-        requests.patch(
-            self.api_url + "/transponder",
-            json={
-                # BUG:
-                # NOTE: Currently force enabling here
-                # but this should be removed when the bug is investigated
-                "enable": True,
-                "sonar_range": r,
-            },
-        )
-        if self.sonar_enabled:
+        self.set_sonar_state(False)
+        if previous_sonar_state:
+            time.sleep(1)
             self.set_sonar_state(True)
 
     def set_datastream_to_rtsp(self):
         if self.mock_hardware:
             return
-        requests.put(
-            self.api_url + "/streamtype",
-            json={
-                "value": 2,
-            },
-        )
+        try:
+            requests.put(
+                self.api_url + "/streamtype",
+                json={
+                    "value": 2,
+                },
+            )
+        except Exception as e:
+            rospy.logerr("Failed while setting sonar datastream to rtsp:" + str(e))
 
     def setup_sonar_capture(self):
         if self.mock_hardware:
@@ -185,7 +181,10 @@ class SonoptixEchoDriver:
         self.set_sonar_range(self.sonar_range)
         self.set_sonar_state(self.sonar_enabled)
         self.set_datastream_to_rtsp()
-        self.sonar_capture = cv2.VideoCapture(self.rtsp_url)
+        try:
+            self.sonar_capture = cv2.VideoCapture(self.rtsp_url)
+        except Exception as e:
+            rospy.logerr("Failed to create sonar image capture:" + str(e))
 
     def sonar_image_to_ranges(self, sonar_image):
         ranges = []
