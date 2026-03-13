@@ -46,8 +46,18 @@ class SonoptixEchoDriver:
         self.image_data_factor = rospy.get_param("~image_data_factor", 1)
         self.default_distance_value = rospy.get_param("~default_distance_value", 999)
         self.publish_sonar_image = rospy.get_param("~publish_sonar_image", True)
-        self.flip_x_sonar_image = rospy.get_param("~flip_x_sonar_image", True)
-        self.flip_y_sonar_image = rospy.get_param("~flip_y_sonar_image", True)
+        self.flip_input_x_sonar_image = rospy.get_param(
+            "~flip_input_x_sonar_image", True
+        )
+        self.flip_input_y_sonar_image = rospy.get_param(
+            "~flip_input_y_sonar_image", True
+        )
+        self.flip_output_x_sonar_image = rospy.get_param(
+            "~flip_output_x_sonar_image", True
+        )
+        self.flip_output_y_sonar_image = rospy.get_param(
+            "~flip_output_y_sonar_image", True
+        )
         self.mock_hardware = rospy.get_param("~mock_hardware", True)
         self.minimum_obstacle_value = rospy.get_param("~minimum_obstacle_value", 180)
         self.sonar_enabled = rospy.get_param("~enabled", False)
@@ -82,6 +92,15 @@ class SonoptixEchoDriver:
 
     def debugging_image_callback(self, image_msg):
         sonar_image = self.cv_bridge.imgmsg_to_cv2(image_msg, desired_encoding="bgr8")
+        flip_opt = None
+        if self.flip_input_x_sonar_image and self.flip_input_y_sonar_image:
+            flip_opt = -1
+        elif self.flip_input_y_sonar_image:
+            flip_opt = 1
+        elif self.flip_input_x_sonar_image:
+            flip_opt = 0
+        if flip_opt is not None:
+            sonar_image = cv2.flip(sonar_image, flip_opt)
         self.publish_sonar_image_to_laserscan(sonar_image)
         self.publish_sonar_image_to_image(sonar_image)
 
@@ -92,8 +111,11 @@ class SonoptixEchoDriver:
             self.image_data_factor = config.image_data_factor
             self.default_distance_value = config.default_distance_value
             self.publish_sonar_image = config.publish_sonar_image
-            self.flip_x_sonar_image = config.flip_x_sonar_image
-            self.flip_y_sonar_image = config.flip_y_sonar_image
+            self.flip_input_x_sonar_image = config.flip_input_x_sonar_image
+            self.flip_input_y_sonar_image = config.flip_input_y_sonar_image
+            self.flip_output_x_sonar_image = config.flip_output_x_sonar_image
+            self.flip_output_y_sonar_image = config.flip_output_y_sonar_image
+            self.sonar_min_range = config.sonar_min_range
             self.mock_hardware = config.mock_hardware
             self.minimum_obstacle_value = config.minimum_obstacle_value
             if config.sonar_range != self.sonar_range:
@@ -133,6 +155,15 @@ class SonoptixEchoDriver:
                             "Error reading from sonar image stream... Skipping publication!"
                         )
                         return
+                flip_opt = None
+                if self.flip_input_x_sonar_image and self.flip_input_y_sonar_image:
+                    flip_opt = -1
+                elif self.flip_input_y_sonar_image:
+                    flip_opt = 1
+                elif self.flip_input_x_sonar_image:
+                    flip_opt = 0
+                if flip_opt is not None:
+                    sonar_image = cv2.flip(sonar_image, flip_opt)
                 self.publish_sonar_image_to_laserscan(sonar_image)
                 self.publish_sonar_image_to_image(sonar_image)
             except Exception as e:
@@ -234,11 +265,11 @@ class SonoptixEchoDriver:
                     sonar_image.astype(np.float32) * self.image_data_factor, 0, 255
                 ).astype(np.uint8)
             flip_opt = None
-            if self.flip_x_sonar_image and self.flip_y_sonar_image:
+            if self.flip_output_x_sonar_image and self.flip_output_y_sonar_image:
                 flip_opt = -1
-            elif self.flip_y_sonar_image:
+            elif self.flip_output_y_sonar_image:
                 flip_opt = 1
-            elif self.flip_x_sonar_image:
+            elif self.flip_output_x_sonar_image:
                 flip_opt = 0
             if flip_opt is not None:
                 sonar_image = cv2.flip(sonar_image, flip_opt)
