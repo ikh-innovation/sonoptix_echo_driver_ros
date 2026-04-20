@@ -61,11 +61,17 @@ class SonoptixEchoDriver:
         self.mock_hardware = rospy.get_param("~mock_hardware", True)
         self.minimum_obstacle_value = rospy.get_param("~minimum_obstacle_value", 180)
         self.sonar_enabled = rospy.get_param("~enabled", False)
+        
+        self.draw_distance_lines = rospy.get_param("~draw_distance_lines", True)
+
         # ------------------------------------------------------------------
         self.laserscan_pub = rospy.Publisher(
             self.laserscan_topic, LaserScan, queue_size=10
         )
         self.image_pub = rospy.Publisher(self.sonar_image_topic, Image, queue_size=10)
+        self.cone_projection_pub = rospy.Publisher(
+            self.sonar_image_topic + "_cone_projection", Image, queue_size=10
+        )
         self.rtsp_url = "rtsp://" + self.ip + ":" + str(self.rtsp_port) + "/raw"
         self.api_url = "http://" + self.ip + ":" + str(self.api_port) + "/api/v1"
 
@@ -99,13 +105,16 @@ class SonoptixEchoDriver:
             flip_opt = 1
         elif self.flip_input_x_sonar_image:
             flip_opt = 0
-        if flip_opt is not None:
-            sonar_image = cv2.flip(sonar_image, flip_opt)
+        # if flip_opt is not None:
+        #     sonar_image = cv2.flip(sonar_image, flip_opt)
+        flip_opt = 0
+        sonar_image = cv2.flip(sonar_image, flip_opt)
+
         self.publish_sonar_image_to_laserscan(sonar_image)
         self.publish_sonar_image_to_image(sonar_image)
 
     def dyn_reconf_callback(self, config, _):
-        rospy.loginfo(config)
+        rospy.logwarn(config)
         with self.mutex:
             self.sonar_frame = config.sonar_frame
             self.image_data_factor = config.image_data_factor
@@ -117,6 +126,7 @@ class SonoptixEchoDriver:
             self.flip_output_y_sonar_image = config.flip_output_y_sonar_image
             self.sonar_min_range = config.sonar_min_range
             self.mock_hardware = config.mock_hardware
+            self.draw_distance_lines = config.draw_distance_lines
             self.minimum_obstacle_value = config.minimum_obstacle_value
             if config.sonar_range != self.sonar_range:
                 self.set_sonar_range(config.sonar_range)
@@ -245,6 +255,192 @@ class SonoptixEchoDriver:
             ranges.append(distance)
         return ranges
 
+    def sonar_image_to_cone_projection(self, sonar_image):
+        """
+        Project sonar image from rectangular beam format to polar cone projection.
+        Each column of the input image represents a beam, emanating from the sonar position.
+
+        Args:
+            sonar_image: Input image where columns are beams and rows are ranges
+
+        Returns:
+            Projected image with polar cone layout, black outside FOV
+        """
+        height, width, channels = sonar_image.shape
+        rospy.logwarn(f"[CONE] Input image shape: {sonar_image.shape}")
+        rospy.logwarn(f"[CONE] Input pixel range: min={sonar_image.min()}, max={sonar_image.max()}, mean={sonar_image.mean():.1f}")
+        rospy.logwarn(f"[CONE] Sonar range: {self.sonar_range}, FOV rad: {self.sonar_fov_rad}")
+
+        range_height_ratio = self.sonar_range / height
+        rospy.logwarn(f"[CONE] Range height ratio: {range_height_ratio}")
+
+        # Calculate output image size based on actual sonar geometry
+        # At max range, cone width is: 2 * sonar_range * sin(FOV/2)
+        # We need height = sonar_range (in pixels matching input height), width = cone_width
+        # But to preserve aspect ratio and have room, use square based on cone width
+        if self.sonar_fov_rad > 0:
+            cone_width_meters = 2.0 * self.sonar_range * np.sin(self.sonar_fov_rad / 2.0)
+            # Pixels per meter (match input resolution)
+            pixels_per_meter = height / self.sonar_range
+            output_width_pixels = int(cone_width_meters * pixels_per_meter)
+            output_height_pixels = height
+            # Make output square to fit the cone nicely
+            output_size = max(output_width_pixels, output_height_pixels)
+        else:
+            output_size = height
+
+        cone_image = np.zeros((output_size, output_size, channels), dtype=np.uint8)
+        rospy.logwarn(f"[CONE] Output image size: {output_size}x{output_size} (cone_width_m={cone_width_meters:.1f}, pixels_per_m={pixels_per_meter:.1f})")
+
+        # Sonar position at center-bottom
+        sonar_x = output_size / 2.0
+        sonar_y = output_size - 1.0
+        rospy.logwarn(f"[CONE] Sonar position: ({sonar_x}, {sonar_y})")
+
+        # Calculate angle increment
+        if self.sonar_fov_rad > 0:
+            angle_increment = self.sonar_fov_rad / (width - 1) if width > 1 else 0
+            angle_start = -self.sonar_fov_rad / 2.0
+            rospy.logwarn(f"[CONE] Angle start: {angle_start}, increment: {angle_increment}")
+        else:
+            rospy.logwarn("[CONE] FOV is 0, returning black image")
+            return cone_image  # Return black image if FOV not set
+
+        
+
+        for beam_idx in range(width):
+            # Calculate angle for this beam
+            beam_angle = angle_start + beam_idx * angle_increment
+
+            # Process each range bin in this beam
+            for range_idx in range(height):
+                # Get pixel color from original image (all channels)
+                pixel = sonar_image[range_idx, beam_idx, :]
+
+                # Skip black pixels (outside actual data)
+                if np.all(pixel == 0):
+                    continue
+
+                # Calculate distance in meters
+                distance = range_idx * range_height_ratio
+
+                # Convert polar (distance, angle) to Cartesian coordinates
+                # Angle is measured from forward direction (up in image)
+                px = int(sonar_x + distance * np.sin(beam_angle) * pixels_per_meter)
+                py = int(sonar_y - distance * np.cos(beam_angle) * pixels_per_meter)
+                cone_image[py, px, :] = pixel
+
+        if not self.draw_distance_lines:
+            return cone_image
+        
+        # Draw scale lines on both sides of the cone (red with 2-meter resolution)
+        scale_color = (0, 0, 255)  # Red in BGR
+        scale_line_length = 15  # Length of each scale tick
+        scale_resolution = 2.0  # 2 meter resolution
+
+        # Draw radial dotted lines connecting left and right edges at constant distances
+        dot_spacing = 10  # Pixels between dots for dashed line
+        dot_length = 5    # Length of each dot
+
+        for dist in np.arange(0, self.sonar_range + 1, scale_resolution):
+            # Generate points along the arc at this distance
+            num_points = 100
+            arc_points = []
+
+            for i in range(num_points):
+                # Interpolate angle from left to right
+                angle = angle_start + (i / (num_points - 1)) * self.sonar_fov_rad
+
+                # Convert polar to Cartesian
+                px = int(sonar_x + dist * np.sin(angle) * pixels_per_meter)
+                py = int(sonar_y - dist * np.cos(angle) * pixels_per_meter)
+
+                # Only add points within bounds
+                if 0 <= px < output_size and 0 <= py < output_size:
+                    arc_points.append((px, py))
+
+            # Draw dotted line connecting the arc points
+            for j in range(len(arc_points) - 1):
+                if (j // dot_spacing) % 2 == 0:  # Draw dot, skip space
+                    pt1 = arc_points[j]
+                    pt2 = arc_points[min(j + dot_length, len(arc_points) - 1)]
+                    cv2.line(cone_image, pt1, pt2, scale_color, 1)
+
+        # Left edge (negative angle limit)
+        left_angle = angle_start
+        for dist in np.arange(0, self.sonar_range + 1, scale_resolution):
+            # Position on left edge
+            px_center = int(sonar_x + dist * np.sin(left_angle) * pixels_per_meter)
+            py_center = int(sonar_y - dist * np.cos(left_angle) * pixels_per_meter)
+
+            # Perpendicular direction (inward from left edge)
+            perp_angle = left_angle + np.pi / 2
+            px_end = int(px_center + scale_line_length * np.cos(perp_angle))
+            py_end = int(py_center + scale_line_length * np.sin(perp_angle))
+
+            if 0 <= px_center < output_size and 0 <= py_center < output_size:
+                # cv2.line(cone_image, (px_center, py_center), (px_end, py_end), scale_color, 2)
+                cv2.circle(cone_image, (px_center, py_center), 1, scale_color, -1)
+        # Right edge (positive angle limit)
+        right_angle = angle_start + self.sonar_fov_rad
+        for dist in np.arange(0, self.sonar_range + 1, scale_resolution):
+            # Position on right edge
+            px_center = int(sonar_x + dist * np.sin(right_angle) * pixels_per_meter)
+            py_center = int(sonar_y - dist * np.cos(right_angle) * pixels_per_meter)
+
+            # Perpendicular direction (inward from right edge)
+            perp_angle = right_angle - np.pi / 2
+            px_end = int(px_center + scale_line_length * np.cos(perp_angle))
+            py_end = int(py_center + scale_line_length * np.sin(perp_angle))
+
+            if 0 <= px_center < output_size and 0 <= py_center < output_size:
+                # cv2.line(cone_image, (px_center, py_center), (px_end, py_end), scale_color, 2)
+                cv2.circle(cone_image, (px_center, py_center), 1, scale_color, -1)
+        # DEBUG: Visualize a random beam with yellow points
+        random_beam_idx = int(width // 3)  # For consistent debugging, use the center beam
+        beam_angle = angle_start + random_beam_idx * angle_increment
+        rospy.logwarn(f"[DEBUG BEAM] Random beam index: {random_beam_idx}, angle: {beam_angle}")
+
+        for range_idx in range(height):
+            pixel = sonar_image[range_idx, random_beam_idx, :]
+            if np.all(pixel == 0):
+                continue
+
+            distance = range_idx * range_height_ratio
+            px = int(sonar_x + distance * np.sin(beam_angle) * pixels_per_meter)
+            py = int(sonar_y - distance * np.cos(beam_angle) * pixels_per_meter)
+
+            if 0 <= px < output_size and 0 <= py < output_size:
+                cv2.circle(cone_image, (px, py), 1, (0, 255, 255), -1)  # Yellow points
+
+        # DEBUG: Visualize specific ranges - small and large
+        small_range_idx = int(height * 0.1)  # 10% from start (close to sensor)
+        large_range_idx = int(height * 0.9)  # 90% from start (far from sensor)
+
+        small_distance = small_range_idx * range_height_ratio
+        large_distance = large_range_idx * range_height_ratio
+        rospy.logwarn(f"[DEBUG RANGES] Small range idx: {small_range_idx} (dist: {small_distance:.2f}m), Large range idx: {large_range_idx} (dist: {large_distance:.2f}m)")
+
+        # Mark all beams at small range with red circles
+        for beam_idx in range(width):
+            beam_angle = angle_start + beam_idx * angle_increment
+            px = int(sonar_x + small_distance * np.sin(beam_angle) * pixels_per_meter)
+            py = int(sonar_y - small_distance * np.cos(beam_angle) * pixels_per_meter)
+            if 0 <= px < output_size and 0 <= py < output_size:
+                cv2.circle(cone_image, (px, py), 1, (0, 0, 255), -1)  # Red circles
+
+        # Mark all beams at large range with cyan circles
+        for beam_idx in range(width):
+            beam_angle = angle_start + beam_idx * angle_increment
+            px = int(sonar_x + large_distance * np.sin(beam_angle) * pixels_per_meter)
+            py = int(sonar_y - large_distance * np.cos(beam_angle) * pixels_per_meter)
+            if 0 <= px < output_size and 0 <= py < output_size:
+                cv2.circle(cone_image, (px, py), 1, (255, 255, 0), -1)  # Cyan circles
+
+        return cone_image
+
+
+
     def publish_sonar_image_to_laserscan(self, sonar_image):
         laserscan_msg = LaserScan()
         laserscan_msg.header.frame_id = self.sonar_frame
@@ -264,6 +460,11 @@ class SonoptixEchoDriver:
                 sonar_image = np.clip(
                     sonar_image.astype(np.float32) * self.image_data_factor, 0, 255
                 ).astype(np.uint8)
+
+
+            
+
+
             flip_opt = None
             if self.flip_output_x_sonar_image and self.flip_output_y_sonar_image:
                 flip_opt = -1
@@ -273,10 +474,22 @@ class SonoptixEchoDriver:
                 flip_opt = 0
             if flip_opt is not None:
                 sonar_image = cv2.flip(sonar_image, flip_opt)
+
+           
+
+            # Publish cone projection
+            cone_projection = self.sonar_image_to_cone_projection(sonar_image)
+            cone_msg = self.cv_bridge.cv2_to_imgmsg(cone_projection, encoding="bgr8")
+            cone_msg.header.stamp = rospy.Time.now()
+            cone_msg.header.frame_id = self.sonar_frame
+            self.cone_projection_pub.publish(cone_msg)
+
             image_msg = self.cv_bridge.cv2_to_imgmsg(sonar_image, encoding="bgr8")
             image_msg.header.stamp = rospy.Time.now()
             image_msg.header.frame_id = self.sonar_frame
             self.image_pub.publish(image_msg)
+
+            
 
 
 if __name__ == "__main__":
