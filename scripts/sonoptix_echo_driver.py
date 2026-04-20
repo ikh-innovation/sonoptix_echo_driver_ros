@@ -105,10 +105,9 @@ class SonoptixEchoDriver:
             flip_opt = 1
         elif self.flip_input_x_sonar_image:
             flip_opt = 0
-        # if flip_opt is not None:
-        #     sonar_image = cv2.flip(sonar_image, flip_opt)
-        flip_opt = 0
-        sonar_image = cv2.flip(sonar_image, flip_opt)
+        if flip_opt is not None:
+            sonar_image = cv2.flip(sonar_image, flip_opt)
+        
 
         self.publish_sonar_image_to_laserscan(sonar_image)
         self.publish_sonar_image_to_image(sonar_image)
