@@ -58,6 +58,12 @@ class SonoptixEchoDriver:
         self.flip_output_y_sonar_image = rospy.get_param(
             "~flip_output_y_sonar_image", True
         )
+        self.flip_output_x_sonar_image_cone = rospy.get_param(
+            "~flip_output_x_sonar_image_cone", True
+        )
+        self.flip_output_y_sonar_image_cone = rospy.get_param(
+            "~flip_output_y_sonar_image_cone", True
+        )
         self.mock_hardware = rospy.get_param("~mock_hardware", True)
         self.minimum_obstacle_value = rospy.get_param("~minimum_obstacle_value", 180)
         self.sonar_enabled = rospy.get_param("~enabled", False)
@@ -123,6 +129,8 @@ class SonoptixEchoDriver:
             self.flip_input_y_sonar_image = config.flip_input_y_sonar_image
             self.flip_output_x_sonar_image = config.flip_output_x_sonar_image
             self.flip_output_y_sonar_image = config.flip_output_y_sonar_image
+            self.flip_output_x_sonar_image_cone = config.flip_output_x_sonar_image_cone
+            self.flip_output_y_sonar_image_cone = config.flip_output_y_sonar_image_cone
             self.sonar_min_range = config.sonar_min_range
             self.mock_hardware = config.mock_hardware
             self.draw_distance_lines = config.draw_distance_lines
@@ -460,8 +468,24 @@ class SonoptixEchoDriver:
                     sonar_image.astype(np.float32) * self.image_data_factor, 0, 255
                 ).astype(np.uint8)
 
+            flip_opt_cone = None
+            sonar_image_flipped = sonar_image
+            if self.flip_output_x_sonar_image_cone and self.flip_output_y_sonar_image_cone:
+                flip_opt_cone = -1
+            elif self.flip_output_y_sonar_image_cone:
+                flip_opt_cone = 1
+            elif self.flip_output_x_sonar_image_cone:
+                flip_opt_cone = 0
+            if flip_opt_cone is not None:
+                sonar_image_flipped = cv2.flip(sonar_image, flip_opt_cone)
 
-            
+
+            # Publish cone projection
+            cone_projection = self.sonar_image_to_cone_projection(sonar_image_flipped)
+            cone_msg = self.cv_bridge.cv2_to_imgmsg(cone_projection, encoding="bgr8")
+            cone_msg.header.stamp = rospy.Time.now()
+            cone_msg.header.frame_id = self.sonar_frame
+            self.cone_projection_pub.publish(cone_msg)
 
 
             flip_opt = None
@@ -472,18 +496,11 @@ class SonoptixEchoDriver:
             elif self.flip_output_x_sonar_image:
                 flip_opt = 0
             if flip_opt is not None:
-                sonar_image = cv2.flip(sonar_image, flip_opt)
+                sonar_image_flipped = cv2.flip(sonar_image, flip_opt)
 
            
 
-            # Publish cone projection
-            cone_projection = self.sonar_image_to_cone_projection(sonar_image)
-            cone_msg = self.cv_bridge.cv2_to_imgmsg(cone_projection, encoding="bgr8")
-            cone_msg.header.stamp = rospy.Time.now()
-            cone_msg.header.frame_id = self.sonar_frame
-            self.cone_projection_pub.publish(cone_msg)
-
-            image_msg = self.cv_bridge.cv2_to_imgmsg(sonar_image, encoding="bgr8")
+            image_msg = self.cv_bridge.cv2_to_imgmsg(sonar_image_flipped, encoding="bgr8")
             image_msg.header.stamp = rospy.Time.now()
             image_msg.header.frame_id = self.sonar_frame
             self.image_pub.publish(image_msg)
