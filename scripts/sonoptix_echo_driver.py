@@ -67,7 +67,7 @@ class SonoptixEchoDriver:
         self.mock_hardware = rospy.get_param("~mock_hardware", True)
         self.minimum_obstacle_value = rospy.get_param("~minimum_obstacle_value", 180)
         self.sonar_enabled = rospy.get_param("~enabled", False)
-        
+
         self.draw_distance_lines = rospy.get_param("~draw_distance_lines", True)
 
         # ------------------------------------------------------------------
@@ -87,6 +87,9 @@ class SonoptixEchoDriver:
         self.mutex = threading.Lock()
         self.cv_bridge = CvBridge()
         self.sonar_capture = None
+        self.latest_sonar_image = None
+        self.frame_reader_thread = None
+        self.frame_reader_should_stop = False
 
         self.pi_deg_ratio = np.pi / 180
 
@@ -146,6 +149,44 @@ class SonoptixEchoDriver:
             self.set_sonar_state(srv.data)
         return True, ""
 
+    def frame_reader_worker(self):
+        """Continuously read frames from sonar capture and keep the latest one."""
+        while not self.frame_reader_should_stop:
+            if self.sonar_capture is None or not self.sonar_capture.isOpened():
+                time.sleep(0.1)
+                continue
+
+            success, frame = self.sonar_capture.read()
+            if not success:
+                with self.mutex:
+                    self.sonar_capture.release()
+                    self.sonar_capture = None
+                rospy.logerr("Frame reader thread: Error reading from sonar image stream")
+                time.sleep(0.1)
+                continue
+
+            # Store the latest frame (will overwrite older ones)
+            with self.mutex:
+                self.latest_sonar_image = frame
+
+    def start_frame_reader_thread(self):
+        """Start the dedicated frame reader thread if not already running."""
+        if self.frame_reader_thread is None or not self.frame_reader_thread.is_alive():
+            if not self.mock_hardware:
+                self.setup_sonar_capture()
+            self.latest_sonar_image = None
+            self.frame_reader_should_stop = False
+            self.frame_reader_thread = threading.Thread(target=self.frame_reader_worker, daemon=True)
+            self.frame_reader_thread.start()
+            rospy.loginfo("Frame reader thread started")
+
+    def stop_frame_reader_thread(self):
+        """Stop the dedicated frame reader thread."""
+        if self.frame_reader_thread is not None and self.frame_reader_thread.is_alive():
+            self.frame_reader_should_stop = True
+            self.frame_reader_thread.join(timeout=1.0)
+            rospy.loginfo("Frame reader thread stopped")
+
     def sonar_read_laserscan_pub(self, _):
         with self.mutex:
             try:
@@ -162,16 +203,11 @@ class SonoptixEchoDriver:
                         0, 256, size=(height, 256, 3), dtype=np.uint8
                     )
                 else:
-                    if self.sonar_capture is None or not self.sonar_capture.isOpened():
-                        self.setup_sonar_capture()
-                    success, sonar_image = self.sonar_capture.read()
-                    if not success:
-                        self.sonar_capture.release()
-                        self.sonar_capture = None
-                        rospy.logerr(
-                            "Error reading from sonar image stream... Skipping publication!"
-                        )
+                    # Use the latest frame read by the dedicated thread
+                    if self.latest_sonar_image is None:
                         return
+                    sonar_image = self.latest_sonar_image
+
                 flip_opt = None
                 if self.flip_input_x_sonar_image and self.flip_input_y_sonar_image:
                     flip_opt = -1
@@ -184,12 +220,15 @@ class SonoptixEchoDriver:
                 self.publish_sonar_image_to_laserscan(sonar_image)
                 self.publish_sonar_image_to_image(sonar_image)
             except Exception as e:
-                self.sonar_capture.release()
-                self.sonar_capture = None
                 rospy.logerr(e)
 
     def set_sonar_state(self, state):
         self.sonar_enabled = state
+        if self.sonar_enabled:
+            self.start_frame_reader_thread()
+        else:
+            self.stop_frame_reader_thread()
+
         if self.mock_hardware:
             return
         try:
