@@ -103,9 +103,9 @@ class SonoptixEchoDriver:
         self.cv_bridge = CvBridge()
         self.sonar_capture = None
         self.latest_sonar_image = None
-        self.frame_reader_thread = None
-        self.frame_reader_should_stop = False
-        # self.start_frame_reader_thread()
+        
+        
+        
         self.frame_time = time.time()
 
         self.pi_deg_ratio = np.pi / 180
@@ -221,206 +221,9 @@ class SonoptixEchoDriver:
                     rospy.logerr("Frame reader thread: Error reading from sonar image stream")
 
 
-            
-
-    
-
-    # def frame_reader_worker(self):
-    #     """Continuously read frames from sonar capture and keep the latest one."""
-
-    #     while not self.frame_reader_should_stop:
-    #         t_loop_start = time.perf_counter()
-
-    #         time.sleep(0.001)
-    #         t_after_sleep = time.perf_counter()
-
-    #         if not self.sonar_enabled:
-    #             continue
-
-    #         t_before_lock = time.perf_counter()
-
-    #         with self.mutex_sonar_capture:
-    #             t_after_lock = time.perf_counter()
-
-    #             if not self.mock_hardware:
-    #                 t_before_check = time.perf_counter()
-
-    #                 if self.sonar_capture is None or not self.sonar_capture.isOpened():
-    #                     self.setup_sonar_capture()
-    #                     t_after_setup = time.perf_counter()
-
-    #                     print(f"[TIMING] setup_sonar_capture: {(t_after_setup - t_before_check)*1000:.3f} ms")
-    #                     continue
-
-    #                 # ---- GRAB TIMING ----
-    #                 t_grab_start = time.perf_counter()
-    #                 grab_times = []
-
-    #                 for _ in range(1):  # drop old frames
-    #                     t_g0 = time.perf_counter()
-    #                     ok = self.sonar_capture.grab()
-    #                     t_g1 = time.perf_counter()
-
-    #                     grab_times.append((t_g1 - t_g0) * 1000)
-
-    #                     if not ok:
-    #                         print("[TIMING] grab() failed")
-    #                         break
-
-    #                 t_grab_end = time.perf_counter()
-
-    #                 # ---- RETRIEVE TIMING ----
-    #                 t_before_retrieve = time.perf_counter()
-
-    #                 success, frame = self.sonar_capture.retrieve()
-
-    #                 t_after_retrieve = time.perf_counter()
-
-    #                 print(f"[TIMING] retrieve(): {(t_after_retrieve - t_before_retrieve)*1000:.3f} ms")
-
-    #                 # Optional: print per-grab timing
-    #                 for i, gt in enumerate(grab_times):
-    #                     print(f"[TIMING] grab[{i}]: {gt:.3f} ms")
-
-    #                 print(f"[TIMING] total_grab_time: {(t_grab_end - t_grab_start)*1000:.3f} ms")
-
-    #                 if not success:
-    #                     self.sonar_capture.release()
-    #                     self.sonar_capture = None
-    #                     rospy.logerr("Frame reader thread: Error retrieving from sonar image stream")
-    #                     continue
-
-    #         t_after_unlock = time.perf_counter()
-
-    #         with self.mutex:
-    #             self.latest_sonar_image = frame
-
-    #         t_end = time.perf_counter()
-
-    #         # ---- PRINT ALL TIMINGS ----
-    #         print("\n[TIMING BREAKDOWN]")
-    #         print(f"sleep: {(t_after_sleep - t_loop_start)*1000:.3f} ms")
-    #         print(f"wait_for_lock: {(t_after_lock - t_before_lock)*1000:.3f} ms")
-    #         print(f"inside_lock_total: {(t_after_unlock - t_after_lock)*1000:.3f} ms")
-    #         print(f"store_frame: {(t_end - t_after_unlock)*1000:.3f} ms")
-    #         print(f"total_loop: {(t_end - t_loop_start)*1000:.3f} ms")
-
-    # def frame_reader_worker(self):
-    #     """Continuously read frames from sonar capture and keep the latest one."""
-
-    #     while not self.frame_reader_should_stop:
-    #         t_loop_start = time.perf_counter()
-
-    #         time.sleep(0.001)
-    #         t_after_sleep = time.perf_counter()
-
-    #         if not self.sonar_enabled:
-    #             continue
-
-    #         t_before_lock = time.perf_counter()
-
-    #         with self.mutex_sonar_capture:
-    #             t_after_lock = time.perf_counter()
-
-    #             if not self.mock_hardware:
-    #                 t_before_check = time.perf_counter()
-
-    #                 if self.sonar_capture is None or not self.sonar_capture.isOpened():
-    #                     self.setup_sonar_capture()
-    #                     t_after_setup = time.perf_counter()
-
-    #                     print(f"[TIMING] setup_sonar_capture: {(t_after_setup - t_before_check)*1000:.3f} ms")
-    #                     continue
-
-    #                 # ---- GRAB TIMING ----
-    #                 t_grab_start = time.perf_counter()
-    #                 grab_times = []
-
-    #                 for _ in range(1):  # drop old frames
-    #                     t_g0 = time.perf_counter()
-    #                     ok = self.sonar_capture.grab()
-    #                     t_g1 = time.perf_counter()
-
-    #                     grab_times.append((t_g1 - t_g0) * 1000)
-
-    #                     if not ok:
-    #                         print("[TIMING] grab() failed")
-    #                         break
-
-    #                 t_grab_end = time.perf_counter()
-
-    #                 # # ---- RETRIEVE TIMING ----
-    #                 t_before_retrieve = time.perf_counter()
-
-    #                 success, frame = self.sonar_capture.retrieve()
-
-    #                 t_after_retrieve = time.perf_counter()
-
-    #                 print(f"[TIMING] retrieve(): {(t_after_retrieve - t_before_retrieve)*1000:.3f} ms")
-
-    #                 # Optional: print per-grab timing
-    #                 for i, gt in enumerate(grab_times):
-    #                     print(f"[TIMING] grab[{i}]: {gt:.3f} ms")
-
-    #                 print(f"[TIMING] total_grab_time: {(t_grab_end - t_grab_start)*1000:.3f} ms")
-
-    #                 if not success:
-    #                     self.sonar_capture.release()
-    #                     self.sonar_capture = None
-    #                     rospy.logerr("Frame reader thread: Error retrieving from sonar image stream")
-    #                     continue
-
-    #         t_after_unlock = time.perf_counter()
-
-    #         with self.mutex:
-    #             self.latest_sonar_image = frame
-
-    #         t_end = time.perf_counter()
-
-    #         # ---- PRINT ALL TIMINGS ----
-    #         print("\n[TIMING BREAKDOWN]")
-    #         print(f"sleep: {(t_after_sleep - t_loop_start)*1000:.3f} ms")
-    #         print(f"wait_for_lock: {(t_after_lock - t_before_lock)*1000:.3f} ms")
-    #         print(f"inside_lock_total: {(t_after_unlock - t_after_lock)*1000:.3f} ms")
-    #         print(f"store_frame: {(t_end - t_after_unlock)*1000:.3f} ms")
-    #         print(f"total_loop: {(t_end - t_loop_start)*1000:.3f} ms")
-    
-
-    def start_frame_reader_thread(self):
-        """Start the dedicated frame reader thread if not already running."""
-        # print("[DEBUG] start_frame_reader_thread: CALLED")
-        if self.frame_reader_thread is None or not self.frame_reader_thread.is_alive():
-            # print("[DEBUG] start_frame_reader_thread: Creating new thread")
-            if not self.mock_hardware:
-                # print("[DEBUG] start_frame_reader_thread: Setting up sonar capture")
-                self.setup_sonar_capture()
-            self.latest_sonar_image = None
-            self.frame_reader_should_stop = False
-            self.frame_reader_thread = threading.Thread(target=self.frame_reader_worker, daemon=True)
-            self.frame_reader_thread.start()
-            # print("[DEBUG] start_frame_reader_thread: Thread started successfully")
-            rospy.loginfo("Frame reader thread started")
-        else:
-            pass
-            # print("[DEBUG] start_frame_reader_thread: Thread already alive, skipping")
-
-    def stop_frame_reader_thread(self):
-        """Stop the dedicated frame reader thread."""
-        # print("[DEBUG] stop_frame_reader_thread: CALLED")
-        if self.frame_reader_thread is not None and self.frame_reader_thread.is_alive():
-            # print("[DEBUG] stop_frame_reader_thread: Setting stop flag")
-            self.frame_reader_should_stop = True
-            # print("[DEBUG] stop_frame_reader_thread: Waiting for thread to join (timeout=1.0)")
-            self.frame_reader_thread.join(timeout=1.0)
-            # print("[DEBUG] stop_frame_reader_thread: Thread join completed")
-            rospy.loginfo("Frame reader thread stopped")
-        else:
-            pass
-            # print("[DEBUG] stop_frame_reader_thread: Thread not alive or None")
 
     
     def sonar_read_image_pub(self, _):
-
 
 
         with self.mutex:
@@ -516,77 +319,10 @@ class SonoptixEchoDriver:
 
 
 
-        
-
-
-
-
-    # def sonar_read_laserscan_pub(self, _):
-    #     # print("[DEBUG] sonar_read_laserscan_pub: CALLED")
-    #     sonar_image = None
-    #     flip_opt = None
-    #     # print("[DEBUG] sonar_read_laserscan_pub: Attempting to acquire mutex")
-    #     with self.mutex:
-    #         # print("[DEBUG] sonar_read_laserscan_pub: Acquired mutex")
-    #         try:
-    #             if not self.sonar_enabled:
-    #                 # print("[DEBUG] sonar_read_laserscan_pub: Sonar not enabled, returning")
-    #                 return
-
-    #             if self.mock_hardware:
-    #                 # print("[DEBUG] sonar_read_laserscan_pub: Using mock hardware")
-    #                 height = 268
-    #                 if self.sonar_range >= 30:
-    #                     height = 1024
-    #                 elif self.sonar_range >= 5:
-    #                     height = 608
-    #                 sonar_image = np.random.randint(
-    #                     0, 256, size=(height, 256, 3), dtype=np.uint8
-    #                 )
-    #             else:
-    #                 # Use the latest frame read by the dedicated thread
-    #                 # print("[DEBUG] sonar_read_laserscan_pub: Using real hardware, latest_image is:", self.latest_sonar_image is not None)
-    #                 if self.latest_sonar_image is None:
-    #                     print("[DEBUG] sonar_read_laserscan_pub: No latest image, returning")
-    #                     return
-
-
-
-    #             if self.flip_input_x_sonar_image and self.flip_input_y_sonar_image:
-    #                 flip_opt = -1
-    #             elif self.flip_input_y_sonar_image:
-    #                 flip_opt = 1
-    #             elif self.flip_input_x_sonar_image:
-    #                 flip_opt = 0
-    #             # print("[DEBUG] sonar_read_laserscan_pub: flip_opt:", flip_opt)
-
-    #         except Exception as e:
-    #             # print("[DEBUG] sonar_read_laserscan_pub: Exception:", e)
-    #             rospy.logerr(e)
-
-    #     sonar_image = self.latest_sonar_image
-
-    #     if flip_opt is not None:
-    #         # print("[DEBUG] sonar_read_laserscan_pub: Flipping image")
-    #         sonar_image = cv2.flip(sonar_image, flip_opt)
-
-    #     # print("[DEBUG] sonar_read_laserscan_pub: Publishing to laserscan")
-        # self.publish_sonar_image_to_laserscan(sonar_image)
-    #     # # print("[DEBUG] sonar_read_laserscan_pub: Publishing to image")
-        # self.publish_sonar_image_to_image(sonar_image)
-    #     # print("[DEBUG] sonar_read_laserscan_pub: DONE")
-
     def set_sonar_state(self, state):
         # print("[DEBUG] set_sonar_state: CALLED with state:", state)
         self.sonar_enabled = state
-        if self.sonar_enabled:
-            # print("[DEBUG] set_sonar_state: Enabling sonar, starting frame reader thread")
-            pass
-            #self.start_frame_reader_thread()
-        else:
-            pass
-            # print("[DEBUG] set_sonar_state: Disabling sonar, stopping frame reader thread")
-           #self.stop_frame_reader_thread()
+        
 
         if self.mock_hardware:
             # print("[DEBUG] set_sonar_state: Mock hardware enabled, returning")
@@ -673,72 +409,35 @@ class SonoptixEchoDriver:
             # print("[DEBUG] setup_sonar_capture: Exception:", e)
             rospy.logerr("Failed to create sonar image capture:" + str(e))
 
-    # def sonar_image_to_ranges(self, sonar_image):
-    #     # print("[DEBUG] sonar_image_to_ranges: CALLED with shape:", sonar_image.shape)
-    #     ranges = []
-    #     height, width, _ = sonar_image.shape
-    #     range_height_ratio = self.sonar_range / height
-    #     for w in range(width):
-    #         beam = sonar_image[:, w, 0]
-    #         distance = self.default_distance_value
-    #         for h in range(height):
-    #             if beam[h] >= self.minimum_obstacle_value:
-    #                 # distance = self.sonar_min_range + h / height * (
-    #                 #     self.sonar_range - self.sonar_min_range
-    #                 # )
-    #                 distance_candidate = h * range_height_ratio
-    #                 if distance_candidate >= self.sonar_min_range:
-    #                     distance = distance_candidate
-    #                     break
-
-    #         ranges.append(distance)
-    #     print("[DEBUG] sonar_image_to_ranges: DONE, ranges length:", len(ranges))
-    #     return ranges
-
-#optimised version of sonar_image_to_ranges using numpy operations instead of nested loops
     def sonar_image_to_ranges(self, sonar_image):
+        # print("[DEBUG] sonar_image_to_ranges: CALLED with shape:", sonar_image.shape)
+        ranges = []
         height, width, _ = sonar_image.shape
         range_height_ratio = self.sonar_range / height
 
-        # Take only one channel
-        img = sonar_image[:, :, 0]
-
-        # Mask where obstacle condition is met
-        mask = img >= self.minimum_obstacle_value
-
-        # Find first occurrence along each column
-        indices = np.argmax(mask, axis=0)
-
-        # Handle columns with NO obstacle
-        no_hit = ~np.any(mask, axis=0)
-
-        ranges = indices * range_height_ratio
-
         # Apply min range condition
-        if self.default_distance_is_inf:
-            ranges[ranges < self.sonar_min_range] = np.inf
-        else: 
-            ranges[ranges < self.sonar_min_range] = self.default_distance_value
+        with self.mutex:
+            if self.default_distance_is_inf:
+                self.default_distance_value = np.inf
+        
 
+        for w in range(width):
+            beam = sonar_image[:, w, 0]
+            distance = self.default_distance_value
+            for h in range(height):
+                if beam[h] >= self.minimum_obstacle_value:
+                    # distance = self.sonar_min_range + h / height * (
+                    #     self.sonar_range - self.sonar_min_range
+                    # )
+                    distance_candidate = h * range_height_ratio
+                    if distance_candidate >= self.sonar_min_range:
+                        distance = distance_candidate
+                        break
 
-        # Set default for no detection
-        ranges[no_hit] = self.default_distance_value
+            ranges.append(distance)
+        return ranges
 
-        ranges = np.array(ranges)
-
-        # # Interfere MAX_RANGE values between beams to create a denser scan (optional, can be removed if not needed) 
-        # denser_ranges = np.empty(2 * len(ranges) - 1)
-
-        # # Fill even indices with original values
-        # denser_ranges[::2] = ranges
-
-        # # Fill odd indices with  default distance (For no obstacle)
-        # denser_ranges[1::2] = self.default_distance_value
-
-        # ranges = denser_ranges
-
-        return ranges.tolist()
-       
+      
 
     
 
