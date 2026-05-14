@@ -191,7 +191,10 @@ class SonoptixEchoDriver:
     def frame_reader_worker(self, _):
         """Continuously read frames from sonar capture and keep the latest one."""
 
-        
+        if not self.sonar_enabled:
+                rospy.logerr("Sonar is not enabled")
+                return
+            
 
         with self.mutex_sonar_capture:
 
