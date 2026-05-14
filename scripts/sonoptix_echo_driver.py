@@ -48,6 +48,7 @@ class SonoptixEchoDriver:
         self.default_distance_is_inf = rospy.get_param("~default_distance_is_inf", True)
 
         self.publish_sonar_image = rospy.get_param("~publish_sonar_image", True)
+        self.publish_cone_image = rospy.get_param("~publish_cone_image", True)       
         self.flip_input_x_sonar_image = rospy.get_param(
             "~flip_input_x_sonar_image", True
         )
@@ -155,6 +156,7 @@ class SonoptixEchoDriver:
             self.default_distance_value = config.default_distance_value
             self.default_distance_is_inf = config.default_distance_is_inf
             self.publish_sonar_image = config.publish_sonar_image
+            self.publish_cone_image = config.publish_cone_image
             self.flip_input_x_sonar_image = config.flip_input_x_sonar_image
             self.flip_input_y_sonar_image = config.flip_input_y_sonar_image
             self.flip_output_x_sonar_image = config.flip_output_x_sonar_image
@@ -189,26 +191,14 @@ class SonoptixEchoDriver:
     def frame_reader_worker(self, _):
         """Continuously read frames from sonar capture and keep the latest one."""
 
-#         while not self.frame_reader_should_stop:
-#
-#             if not self.sonar_enabled:
-#                 continue
-
-            
+        
 
         with self.mutex_sonar_capture:
 
-
             if not self.mock_hardware:
-
 
                 if self.sonar_capture is None or not self.sonar_capture.isOpened():
                     self.setup_sonar_capture()
-
-
-
-
-
 
                 # for _ in range(2):
                 #     self.sonar_capture.grab()
@@ -940,56 +930,62 @@ class SonoptixEchoDriver:
 
     def publish_sonar_image_to_image(self, sonar_image):
         # print("[DEBUG] publish_sonar_image_to_image: CALLED")
-        if self.publish_sonar_image:
-            # print("[DEBUG] publish_sonar_image_to_image: Publishing enabled")
+        if self.publish_sonar_image or self.publish_cone_image:
+
             if self.image_data_factor != 1.0:
                 # print("[DEBUG] publish_sonar_image_to_image: Applying image data factor")
                 sonar_image = np.clip(
                     sonar_image.astype(np.float32) * self.image_data_factor, 0, 255
                 ).astype(np.uint8)
-            #
-            # flip_opt_cone = None
-            # sonar_image_flipped = sonar_image
-            # if self.flip_output_x_sonar_image_cone and self.flip_output_y_sonar_image_cone:
-            #     flip_opt_cone = -1
-            # elif self.flip_output_y_sonar_image_cone:
-            #     flip_opt_cone = 1
-            # elif self.flip_output_x_sonar_image_cone:
-            #     flip_opt_cone = 0
-            # if flip_opt_cone is not None:
-            #     sonar_image_flipped = cv2.flip(sonar_image, flip_opt_cone)
-            #
-            #
-            # # Publish cone projection
-            # # print("[DEBUG] publish_sonar_image_to_image: Creating cone projection")
-            # cone_projection = self.sonar_image_to_cone_projection(sonar_image_flipped)
-            # # print("[DEBUG] publish_sonar_image_to_image: Converting cone to image message")
-            # cone_msg = self.cv_bridge.cv2_to_imgmsg(cone_projection, encoding="bgr8")
-            # cone_msg.header.stamp = rospy.Time.now()
-            # cone_msg.header.frame_id = self.sonar_frame
-            # # print("[DEBUG] publish_sonar_image_to_image: Publishing cone projection")
-            # self.cone_projection_pub.publish(cone_msg)
-            # # print("[DEBUG] publish_sonar_image_to_image: Cone projection published")
+            
+            
+
+            if self.publish_sonar_image:
+                flip_opt = None
+                if self.flip_output_x_sonar_image and self.flip_output_y_sonar_image:
+                    flip_opt = -1
+                elif self.flip_output_y_sonar_image:
+                    flip_opt = 1
+                elif self.flip_output_x_sonar_image:
+                    flip_opt = 0
+                if flip_opt is not None:
+                    sonar_image_flipped = cv2.flip(sonar_image, flip_opt)
 
 
-            flip_opt = None
-            if self.flip_output_x_sonar_image and self.flip_output_y_sonar_image:
-                flip_opt = -1
-            elif self.flip_output_y_sonar_image:
-                flip_opt = 1
-            elif self.flip_output_x_sonar_image:
-                flip_opt = 0
-            if flip_opt is not None:
-                sonar_image_flipped = cv2.flip(sonar_image, flip_opt)
+                # print("[DEBUG] publish_sonar_image_to_image: Converting sonar image to message")
+                image_msg = self.cv_bridge.cv2_to_imgmsg(sonar_image_flipped, encoding="bgr8")
+                image_msg.header.stamp = rospy.Time.now()
+                image_msg.header.frame_id = self.sonar_frame
+                # print("[DEBUG] publish_sonar_image_to_image: Publishing sonar image")
+                self.image_pub.publish(image_msg)
+                # print("[DEBUG] publish_sonar_image_to_image: DONE")
 
 
-            # print("[DEBUG] publish_sonar_image_to_image: Converting sonar image to message")
-            image_msg = self.cv_bridge.cv2_to_imgmsg(sonar_image_flipped, encoding="bgr8")
-            image_msg.header.stamp = rospy.Time.now()
-            image_msg.header.frame_id = self.sonar_frame
-            # print("[DEBUG] publish_sonar_image_to_image: Publishing sonar image")
-            self.image_pub.publish(image_msg)
-            # print("[DEBUG] publish_sonar_image_to_image: DONE")
+            
+            if self.publish_cone_image:
+
+                flip_opt_cone = None
+                sonar_image_flipped = sonar_image
+                if self.flip_output_x_sonar_image_cone and self.flip_output_y_sonar_image_cone:
+                    flip_opt_cone = -1
+                elif self.flip_output_y_sonar_image_cone:
+                    flip_opt_cone = 1
+                elif self.flip_output_x_sonar_image_cone:
+                    flip_opt_cone = 0
+                if flip_opt_cone is not None:
+                    sonar_image_flipped = cv2.flip(sonar_image, flip_opt_cone)
+                
+                #
+                # # Publish cone projection
+                # print("[DEBUG] publish_sonar_image_to_image: Creating cone projection")
+                cone_projection = self.sonar_image_to_cone_projection(sonar_image_flipped)
+                # print("[DEBUG] publish_sonar_image_to_image: Converting cone to image message")
+                cone_msg = self.cv_bridge.cv2_to_imgmsg(cone_projection, encoding="bgr8")
+                cone_msg.header.stamp = rospy.Time.now()
+                cone_msg.header.frame_id = self.sonar_frame
+                # print("[DEBUG] publish_sonar_image_to_image: Publishing cone projection")
+                self.cone_projection_pub.publish(cone_msg)
+                # print("[DEBUG] publish_sonar_image_to_image: Cone projection published")
 
 
 
