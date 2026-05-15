@@ -14,7 +14,10 @@ from sonoptix_echo_driver_ros.cfg import SonoptixEchoConfig
 
 class SonoptixEchoDriver:
     def __del__(self):
-        self.pub_timer.shutdown()
+        self.image_pub_timer.shutdown()
+        self.frame_reader_timer.shutdown()
+        self.laserscan_pub_timer.shutdown()
+
         if self.sonar_capture:
             self.sonar_capture.release()
 
@@ -191,9 +194,10 @@ class SonoptixEchoDriver:
     def frame_reader_worker(self, _):
         """Continuously read frames from sonar capture and keep the latest one."""
 
-        if not self.sonar_enabled:
-                rospy.logerr("Sonar is not enabled")
-                return
+        with self.mutex:
+            if not self.sonar_enabled:
+                    rospy.logerr("Sonar is not enabled")
+                    return
             
 
         with self.mutex_sonar_capture:
@@ -375,11 +379,15 @@ class SonoptixEchoDriver:
             rospy.logerr("Failed while setting sonar datastream to rtsp:" + str(e))
 
     def setup_sonar_capture(self):
-        # print("[DEBUG] setup_sonar_capture: CALLED")
-        if self.mock_hardware:
-            # print("[DEBUG] setup_sonar_capture: Mock hardware, returning")
+        
+    
+        if self.mock_hardware:    
             return
-        # print("[DEBUG] setup_sonar_capture: Attempting to connect to rtsp://192.168.1.3:1945/")
+        
+        # self.set_sonar_range(self.sonar_range)
+        # self.set_sonar_state(self.sonar_enabled)
+        self.set_datastream_to_rtsp()
+        
         try:
             # self.rtsp_url = "rtsp://192.168.45.20:1945/"
 #             gst = (
