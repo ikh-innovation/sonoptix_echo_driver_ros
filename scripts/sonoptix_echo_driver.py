@@ -533,7 +533,7 @@ class SonoptixEchoDriver:
         laserscan_msg.angle_increment = self.sonar_fov_rad / 256
         laserscan_msg.scan_time = 1.0 / self.pub_hz
         laserscan_msg.range_min = self.sonar_min_range
-        laserscan_msg.range_max = self.sonar_range
+        laserscan_msg.range_max = np.inf
         laserscan_msg.ranges = self.sonar_image_to_ranges(sonar_image)
         self.laserscan_pub.publish(laserscan_msg)
 
