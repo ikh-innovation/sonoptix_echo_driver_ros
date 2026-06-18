@@ -1,0 +1,8 @@
+enable_sonar_server: "enable_sonar"
+ip: "192.168.1.42"
+rtsp_port: 8554
+api_port: 8000
+laserscan_topic: "/scrufy/sonar_scan"
+sonar_image_topic: "sonar_image"
+publish_hz: 25
+debugging_sonar_image_sub_topic: ""

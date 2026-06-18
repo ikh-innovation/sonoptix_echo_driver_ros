@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<launch>
+    <node name="sonoptix_echo_driver_node" pkg="sonoptix_echo_driver_ros" type="sonoptix_echo_driver.py" output="screen">
+        <rosparam command="load" file="$(find sonoptix_echo_driver_ros)/config/sonoptix_echo_debugging.yaml" />
+    </node>
+</launch>
+

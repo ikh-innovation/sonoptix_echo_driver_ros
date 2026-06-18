@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>sonoptix_echo_driver_ros</name>
+  <version>0.0.1</version>
+  <description>ROS Driver for the Sonoptix ECHO Multibeam Sonar</description>
+
+  <maintainer email="gstavrinos@iknowhow.com">George Stavrinos</maintainer>
+
+  <license>GNU-3</license>
+
+  <url type="website">https://github.com/ikh-innovation/sonoptix_echo_driver_ros</url>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <depend>rospy</depend>
+  <depend>std_srvs</depend>
+  <depend>cv_bridge</depend>
+  <depend>sensor_msgs</depend>
+  <depend>dynamic_reconfigure</depend>
+</package>
